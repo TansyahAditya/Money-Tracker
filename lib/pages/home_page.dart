@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import 'package:money_tracker/models/database.dart';
 import 'package:money_tracker/models/transaction_with_category.dart';
 import 'package:money_tracker/pages/transaction_page.dart';
+import 'package:money_tracker/utils/page_transitions.dart';
 
 enum TimePeriod { daily, weekly, monthly, yearly }
 
@@ -17,7 +18,7 @@ class HomePage extends StatefulWidget {
   State<HomePage> createState() => _HomePageState();
 }
 
-class _HomePageState extends State<HomePage> {
+class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   final AppDatabase database = AppDatabase();
 
   int totalIncome = 0;
@@ -26,11 +27,47 @@ class _HomePageState extends State<HomePage> {
   Stream<List<TransactionWithCategory>>? _transactionStream;
   Map<String, int> expenseByCategory = {};
   Map<String, int> incomeByCategory = {};
+  
+  // Expandable states
+  bool isIncomeExpanded = false;
+  bool isExpenseExpanded = false;
+
+  // Animation controllers
+  late AnimationController _incomeAnimController;
+  late AnimationController _expenseAnimController;
+  late Animation<double> _incomeExpandAnimation;
+  late Animation<double> _expenseExpandAnimation;
 
   @override
   void initState() {
     super.initState();
     _initializeStream();
+    
+    // Initialize animation controllers with 60fps smooth curves
+    _incomeAnimController = AnimationController(
+      duration: const Duration(milliseconds: 300),
+      vsync: this,
+    );
+    _expenseAnimController = AnimationController(
+      duration: const Duration(milliseconds: 300),
+      vsync: this,
+    );
+    
+    _incomeExpandAnimation = CurvedAnimation(
+      parent: _incomeAnimController,
+      curve: Curves.easeOutQuint,
+    );
+    _expenseExpandAnimation = CurvedAnimation(
+      parent: _expenseAnimController,
+      curve: Curves.easeOutQuint,
+    );
+  }
+
+  @override
+  void dispose() {
+    _incomeAnimController.dispose();
+    _expenseAnimController.dispose();
+    super.dispose();
   }
 
   @override
@@ -83,7 +120,7 @@ class _HomePageState extends State<HomePage> {
       case TimePeriod.weekly:
         int daysFromMonday = date.weekday - 1;
         DateTime startOfWeek = date.subtract(Duration(days: daysFromMonday));
-        DateTime endOfWeek = startOfWeek.add(Duration(days: 6));
+        DateTime endOfWeek = startOfWeek.add(const Duration(days: 6));
         return DateTime(endOfWeek.year, endOfWeek.month, endOfWeek.day, 23, 59, 59);
       case TimePeriod.monthly:
         return DateTime(date.year, date.month + 1, 0, 23, 59, 59);
@@ -95,13 +132,13 @@ class _HomePageState extends State<HomePage> {
   String _getPeriodLabel(TimePeriod period) {
     switch (period) {
       case TimePeriod.daily:
-        return 'Daily';
+        return 'Harian';
       case TimePeriod.weekly:
-        return 'Weekly';
+        return 'Mingguan';
       case TimePeriod.monthly:
-        return 'Monthly';
+        return 'Bulanan';
       case TimePeriod.yearly:
-        return 'Yearly';
+        return 'Tahunan';
     }
   }
 
@@ -124,12 +161,12 @@ class _HomePageState extends State<HomePage> {
 
   Widget buildPeriodSelector(ColorScheme colorScheme) {
     return Padding(
-      padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: SegmentedButton<TimePeriod>(
         segments: TimePeriod.values.map((period) {
           return ButtonSegment<TimePeriod>(
             value: period,
-            label: Text(_getPeriodLabel(period)),
+            label: Text(_getPeriodLabel(period), style: const TextStyle(fontSize: 12)),
           );
         }).toList(),
         selected: {selectedPeriod},
@@ -139,128 +176,335 @@ class _HomePageState extends State<HomePage> {
             _initializeStream();
           });
         },
-        style: ButtonStyle(
+        style: const ButtonStyle(
           visualDensity: VisualDensity.compact,
         ),
       ),
     );
   }
 
-  Widget buildSummaryCards(ColorScheme colorScheme) {
+  Widget buildExpandableSummaryCards(ColorScheme colorScheme) {
     return Padding(
       padding: const EdgeInsets.all(16),
-      child: Row(
+      child: Column(
         children: [
-          Expanded(
-            child: Container(
-              padding: EdgeInsets.all(20),
+          // Income Card - Expandable
+          ScaleOnTap(
+            onTap: () {
+              setState(() {
+                isIncomeExpanded = !isIncomeExpanded;
+                if (isIncomeExpanded) {
+                  _incomeAnimController.forward();
+                } else {
+                  _incomeAnimController.reverse();
+                }
+              });
+            },
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeOutQuint,
+              padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    Color(0xFF4CAF50),
-                    Color(0xFF2E7D32),
-                  ],
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF4CAF50), Color(0xFF2E7D32)],
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                 ),
                 borderRadius: BorderRadius.circular(20),
                 boxShadow: [
                   BoxShadow(
-                    color: Color(0xFF4CAF50).withOpacity(0.3),
+                    color: const Color(0xFF4CAF50).withOpacity(0.3),
                     blurRadius: 12,
-                    offset: Offset(0, 6),
+                    offset: const Offset(0, 6),
                   ),
                 ],
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Container(
-                    padding: EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.2),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Icon(
-                      Icons.arrow_downward_rounded,
-                      color: Colors.white,
-                      size: 20,
-                    ),
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Icon(Icons.arrow_downward_rounded, color: Colors.white, size: 20),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Pemasukan',
+                              style: GoogleFonts.poppins(fontSize: 13, color: Colors.white.withOpacity(0.9)),
+                            ),
+                            const SizedBox(height: 2),
+                            TweenAnimationBuilder<int>(
+                              tween: IntTween(begin: 0, end: totalIncome),
+                              duration: const Duration(milliseconds: 600),
+                              curve: Curves.easeOutQuint,
+                              builder: (context, value, child) {
+                                return Text(
+                                  NumberFormat.currency(locale: 'id', symbol: 'Rp ', decimalDigits: 0).format(value),
+                                  style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.w600, color: Colors.white),
+                                );
+                              },
+                            ),
+                          ],
+                        ),
+                      ),
+                      AnimatedRotation(
+                        turns: isIncomeExpanded ? 0.5 : 0,
+                        duration: const Duration(milliseconds: 300),
+                        curve: Curves.easeOutQuint,
+                        child: Icon(Icons.keyboard_arrow_down_rounded, color: Colors.white.withOpacity(0.8)),
+                      ),
+                    ],
                   ),
-                  SizedBox(height: 12),
-                  Text(
-                    'Income',
-                    style: GoogleFonts.poppins(
-                      fontSize: 13,
-                      color: Colors.white.withOpacity(0.9),
-                    ),
-                  ),
-                  SizedBox(height: 4),
-                  Text(
-                    NumberFormat.currency(locale: 'id', symbol: 'Rp ', decimalDigits: 0).format(totalIncome),
-                    style: GoogleFonts.poppins(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.white,
+                  // Expandable content
+                  SizeTransition(
+                    sizeFactor: _incomeExpandAnimation,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const SizedBox(height: 16),
+                        Container(
+                          height: 1,
+                          color: Colors.white.withOpacity(0.2),
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          'Breakdown per Kategori',
+                          style: GoogleFonts.poppins(fontSize: 12, color: Colors.white.withOpacity(0.7)),
+                        ),
+                        const SizedBox(height: 8),
+                        if (incomeByCategory.isEmpty)
+                          Text(
+                            'Belum ada pemasukan',
+                            style: GoogleFonts.poppins(fontSize: 13, color: Colors.white.withOpacity(0.6)),
+                          )
+                        else
+                          ...incomeByCategory.entries.map((entry) => Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 4),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Row(
+                                  children: [
+                                    Container(
+                                      width: 8,
+                                      height: 8,
+                                      decoration: BoxDecoration(
+                                        color: Colors.white,
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      entry.key,
+                                      style: GoogleFonts.poppins(fontSize: 13, color: Colors.white),
+                                    ),
+                                  ],
+                                ),
+                                Text(
+                                  NumberFormat.currency(locale: 'id', symbol: 'Rp ', decimalDigits: 0).format(entry.value),
+                                  style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.white),
+                                ),
+                              ],
+                            ),
+                          )),
+                      ],
                     ),
                   ),
                 ],
               ),
             ),
           ),
-          SizedBox(width: 12),
-          Expanded(
-            child: Container(
-              padding: EdgeInsets.all(20),
+          const SizedBox(height: 12),
+          // Expense Card - Expandable
+          ScaleOnTap(
+            onTap: () {
+              setState(() {
+                isExpenseExpanded = !isExpenseExpanded;
+                if (isExpenseExpanded) {
+                  _expenseAnimController.forward();
+                } else {
+                  _expenseAnimController.reverse();
+                }
+              });
+            },
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeOutQuint,
+              padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    Color(0xFFEF5350),
-                    Color(0xFFC62828),
-                  ],
+                gradient: const LinearGradient(
+                  colors: [Color(0xFFEF5350), Color(0xFFC62828)],
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                 ),
                 borderRadius: BorderRadius.circular(20),
                 boxShadow: [
                   BoxShadow(
-                    color: Color(0xFFEF5350).withOpacity(0.3),
+                    color: const Color(0xFFEF5350).withOpacity(0.3),
                     blurRadius: 12,
-                    offset: Offset(0, 6),
+                    offset: const Offset(0, 6),
                   ),
                 ],
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Container(
-                    padding: EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.2),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Icon(
-                      Icons.arrow_upward_rounded,
-                      color: Colors.white,
-                      size: 20,
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Icon(Icons.arrow_upward_rounded, color: Colors.white, size: 20),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Pengeluaran',
+                              style: GoogleFonts.poppins(fontSize: 13, color: Colors.white.withOpacity(0.9)),
+                            ),
+                            const SizedBox(height: 2),
+                            TweenAnimationBuilder<int>(
+                              tween: IntTween(begin: 0, end: totalExpense),
+                              duration: const Duration(milliseconds: 600),
+                              curve: Curves.easeOutQuint,
+                              builder: (context, value, child) {
+                                return Text(
+                                  NumberFormat.currency(locale: 'id', symbol: 'Rp ', decimalDigits: 0).format(value),
+                                  style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.w600, color: Colors.white),
+                                );
+                              },
+                            ),
+                          ],
+                        ),
+                      ),
+                      AnimatedRotation(
+                        turns: isExpenseExpanded ? 0.5 : 0,
+                        duration: const Duration(milliseconds: 300),
+                        curve: Curves.easeOutQuint,
+                        child: Icon(Icons.keyboard_arrow_down_rounded, color: Colors.white.withOpacity(0.8)),
+                      ),
+                    ],
+                  ),
+                  // Expandable content
+                  SizeTransition(
+                    sizeFactor: _expenseExpandAnimation,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const SizedBox(height: 16),
+                        Container(
+                          height: 1,
+                          color: Colors.white.withOpacity(0.2),
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          'Breakdown per Kategori',
+                          style: GoogleFonts.poppins(fontSize: 12, color: Colors.white.withOpacity(0.7)),
+                        ),
+                        const SizedBox(height: 8),
+                        if (expenseByCategory.isEmpty)
+                          Text(
+                            'Belum ada pengeluaran',
+                            style: GoogleFonts.poppins(fontSize: 13, color: Colors.white.withOpacity(0.6)),
+                          )
+                        else
+                          ...expenseByCategory.entries.map((entry) => Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 4),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Row(
+                                  children: [
+                                    Container(
+                                      width: 8,
+                                      height: 8,
+                                      decoration: BoxDecoration(
+                                        color: Colors.white,
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      entry.key,
+                                      style: GoogleFonts.poppins(fontSize: 13, color: Colors.white),
+                                    ),
+                                  ],
+                                ),
+                                Text(
+                                  NumberFormat.currency(locale: 'id', symbol: 'Rp ', decimalDigits: 0).format(entry.value),
+                                  style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.white),
+                                ),
+                              ],
+                            ),
+                          )),
+                      ],
                     ),
                   ),
-                  SizedBox(height: 12),
-                  Text(
-                    'Expense',
-                    style: GoogleFonts.poppins(
-                      fontSize: 13,
-                      color: Colors.white.withOpacity(0.9),
-                    ),
+                ],
+              ),
+            ),
+          ),
+          // Balance Card
+          const SizedBox(height: 12),
+          AnimatedAppearance(
+            delay: const Duration(milliseconds: 100),
+            child: Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: colorScheme.surfaceContainerLow,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: colorScheme.outlineVariant.withOpacity(0.5)),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: colorScheme.primaryContainer,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Icon(Icons.account_balance_wallet_rounded, color: colorScheme.primary, size: 20),
+                      ),
+                      const SizedBox(width: 12),
+                      Text(
+                        'Saldo ${_getPeriodLabel(selectedPeriod)}',
+                        style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w500),
+                      ),
+                    ],
                   ),
-                  SizedBox(height: 4),
-                  Text(
-                    NumberFormat.currency(locale: 'id', symbol: 'Rp ', decimalDigits: 0).format(totalExpense),
-                    style: GoogleFonts.poppins(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.white,
-                    ),
+                  TweenAnimationBuilder<int>(
+                    tween: IntTween(begin: 0, end: totalIncome - totalExpense),
+                    duration: const Duration(milliseconds: 600),
+                    curve: Curves.easeOutQuint,
+                    builder: (context, value, child) {
+                      final isPositive = value >= 0;
+                      return Text(
+                        '${isPositive ? '+' : ''}${NumberFormat.currency(locale: 'id', symbol: 'Rp ', decimalDigits: 0).format(value)}',
+                        style: GoogleFonts.poppins(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: isPositive ? const Color(0xFF4CAF50) : const Color(0xFFEF5350),
+                        ),
+                      );
+                    },
                   ),
                 ],
               ),
@@ -273,18 +517,18 @@ class _HomePageState extends State<HomePage> {
 
   Widget buildChart(ColorScheme colorScheme) {
     if (expenseByCategory.isEmpty && incomeByCategory.isEmpty) {
-      return SizedBox.shrink();
+      return const SizedBox.shrink();
     }
 
     final List<Color> chartColors = [
-      Color(0xFF2196F3),
-      Color(0xFF4CAF50),
-      Color(0xFFFF9800),
-      Color(0xFF9C27B0),
-      Color(0xFFE91E63),
-      Color(0xFF00BCD4),
-      Color(0xFF795548),
-      Color(0xFF607D8B),
+      const Color(0xFF2196F3),
+      const Color(0xFF4CAF50),
+      const Color(0xFFFF9800),
+      const Color(0xFF9C27B0),
+      const Color(0xFFE91E63),
+      const Color(0xFF00BCD4),
+      const Color(0xFF795548),
+      const Color(0xFF607D8B),
     ];
 
     List<PieChartSectionData> expenseSections = [];
@@ -300,205 +544,209 @@ class _HomePageState extends State<HomePage> {
       colorIndex++;
     });
 
-    return Container(
-      margin: EdgeInsets.symmetric(horizontal: 16),
-      padding: EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: colorScheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Expense by Category',
-            style: GoogleFonts.poppins(
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-              color: colorScheme.onSurface,
-            ),
-          ),
-          SizedBox(height: 16),
-          if (expenseSections.isNotEmpty)
-            Row(
-              children: [
-                SizedBox(
-                  height: 120,
-                  width: 120,
-                  child: PieChart(
-                    PieChartData(
-                      sections: expenseSections,
-                      centerSpaceRadius: 30,
-                      sectionsSpace: 2,
-                    ),
-                  ),
-                ),
-                SizedBox(width: 20),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      ...expenseByCategory.entries.take(4).toList().asMap().entries.map((entry) {
-                        int idx = entry.key;
-                        var cat = entry.value;
-                        return Padding(
-                          padding: EdgeInsets.only(bottom: 8),
-                          child: Row(
-                            children: [
-                              Container(
-                                width: 12,
-                                height: 12,
-                                decoration: BoxDecoration(
-                                  color: chartColors[idx % chartColors.length],
-                                  borderRadius: BorderRadius.circular(3),
-                                ),
-                              ),
-                              SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  cat.key,
-                                  style: GoogleFonts.poppins(
-                                    fontSize: 12,
-                                    color: colorScheme.onSurfaceVariant,
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                              Text(
-                                NumberFormat.currency(locale: 'id', symbol: 'Rp ', decimalDigits: 0).format(cat.value),
-                                style: GoogleFonts.poppins(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w500,
-                                  color: colorScheme.onSurface,
-                                ),
-                              ),
-                            ],
-                          ),
-                        );
-                      }),
-                    ],
-                  ),
-                ),
-              ],
-            )
-          else
-            Center(
-              child: Text(
-                'No expenses',
-                style: GoogleFonts.poppins(
-                  color: colorScheme.onSurfaceVariant,
-                ),
+    return AnimatedAppearance(
+      delay: const Duration(milliseconds: 150),
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 16),
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: colorScheme.surfaceContainerLow,
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Pengeluaran per Kategori',
+              style: GoogleFonts.poppins(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: colorScheme.onSurface,
               ),
             ),
-        ],
+            const SizedBox(height: 16),
+            if (expenseSections.isNotEmpty)
+              Row(
+                children: [
+                  SizedBox(
+                    height: 120,
+                    width: 120,
+                    child: PieChart(
+                      PieChartData(
+                        sections: expenseSections,
+                        centerSpaceRadius: 30,
+                        sectionsSpace: 2,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 20),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        ...expenseByCategory.entries.take(4).toList().asMap().entries.map((entry) {
+                          int idx = entry.key;
+                          var cat = entry.value;
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: Row(
+                              children: [
+                                Container(
+                                  width: 12,
+                                  height: 12,
+                                  decoration: BoxDecoration(
+                                    color: chartColors[idx % chartColors.length],
+                                    borderRadius: BorderRadius.circular(3),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    cat.key,
+                                    style: GoogleFonts.poppins(
+                                      fontSize: 12,
+                                      color: colorScheme.onSurfaceVariant,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                Text(
+                                  NumberFormat.currency(locale: 'id', symbol: 'Rp ', decimalDigits: 0).format(cat.value),
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w500,
+                                    color: colorScheme.onSurface,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        }),
+                      ],
+                    ),
+                  ),
+                ],
+              )
+            else
+              Center(
+                child: Text(
+                  'Belum ada pengeluaran',
+                  style: GoogleFonts.poppins(
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
 
-  Widget buildTransactionCard(TransactionWithCategory transaction, ColorScheme colorScheme) {
+  Widget buildTransactionCard(TransactionWithCategory transaction, int index, ColorScheme colorScheme) {
     bool isIncome = transaction.category.type == 1;
     
-    return Container(
-      margin: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      child: Card(
-        color: colorScheme.surfaceContainerLow,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(16),
-          onTap: () {
-            Navigator.of(context)
-                .push(
-                  MaterialPageRoute(
-                    builder: (_) => TransactionPage(
-                      transactionsWithCategory: transaction,
+    return AnimatedListItem(
+      index: index,
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        child: Card(
+          color: colorScheme.surfaceContainerLow,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(16),
+            onTap: () {
+              Navigator.of(context)
+                  .push(
+                    SmoothPageRoute(
+                      page: TransactionPage(transactionsWithCategory: transaction),
+                    ),
+                  )
+                  .then((updated) {
+                    if (updated == true) {
+                      refreshData();
+                    }
+                  });
+            },
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: isIncome
+                          ? const Color(0xFF4CAF50).withOpacity(0.15)
+                          : const Color(0xFFEF5350).withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(
+                      isIncome ? Icons.arrow_downward_rounded : Icons.arrow_upward_rounded,
+                      color: isIncome ? const Color(0xFF4CAF50) : const Color(0xFFEF5350),
+                      size: 20,
                     ),
                   ),
-                )
-                .then((updated) {
-                  if (updated == true) {
-                    refreshData();
-                  }
-                });
-          },
-          child: Padding(
-            padding: EdgeInsets.all(16),
-            child: Row(
-              children: [
-                Container(
-                  padding: EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: isIncome
-                        ? Color(0xFF4CAF50).withOpacity(0.15)
-                        : Color(0xFFEF5350).withOpacity(0.15),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Icon(
-                    isIncome ? Icons.arrow_downward_rounded : Icons.arrow_upward_rounded,
-                    color: isIncome ? Color(0xFF4CAF50) : Color(0xFFEF5350),
-                    size: 20,
-                  ),
-                ),
-                SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        transaction.category.name,
-                        style: GoogleFonts.poppins(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w500,
-                          color: colorScheme.onSurface,
-                        ),
-                      ),
-                      SizedBox(height: 4),
-                      Text(
-                        DateFormat('dd MMM yyyy • HH:mm').format(
-                          transaction.transaction.transaction_date,
-                        ),
-                        style: GoogleFonts.poppins(
-                          fontSize: 12,
-                          color: colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text(
-                      '${isIncome ? '+' : '-'} ${NumberFormat.currency(locale: 'id', symbol: 'Rp ', decimalDigits: 0).format(transaction.transaction.amount)}',
-                      style: GoogleFonts.poppins(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        color: isIncome ? Color(0xFF4CAF50) : Color(0xFFEF5350),
-                      ),
-                    ),
-                    SizedBox(height: 8),
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        InkWell(
-                          onTap: () async {
-                            await database.deleteTransactionRepo(
-                              transaction.transaction.id,
-                            );
-                          },
-                          borderRadius: BorderRadius.circular(8),
-                          child: Padding(
-                            padding: EdgeInsets.all(4),
-                            child: Icon(
-                              Icons.delete_outline_rounded,
-                              size: 20,
-                              color: colorScheme.error,
-                            ),
+                        Text(
+                          transaction.category.name,
+                          style: GoogleFonts.poppins(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                            color: colorScheme.onSurface,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          DateFormat('dd MMM yyyy • HH:mm').format(
+                            transaction.transaction.transaction_date,
+                          ),
+                          style: GoogleFonts.poppins(
+                            fontSize: 12,
+                            color: colorScheme.onSurfaceVariant,
                           ),
                         ),
                       ],
                     ),
-                  ],
-                ),
-              ],
+                  ),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text(
+                        '${isIncome ? '+' : '-'} ${NumberFormat.currency(locale: 'id', symbol: 'Rp ', decimalDigits: 0).format(transaction.transaction.amount)}',
+                        style: GoogleFonts.poppins(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: isIncome ? const Color(0xFF4CAF50) : const Color(0xFFEF5350),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          InkWell(
+                            onTap: () async {
+                              await database.deleteTransactionRepo(
+                                transaction.transaction.id,
+                              );
+                            },
+                            borderRadius: BorderRadius.circular(8),
+                            child: Padding(
+                              padding: const EdgeInsets.all(4),
+                              child: Icon(
+                                Icons.delete_outline_rounded,
+                                size: 20,
+                                color: colorScheme.error,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -515,7 +763,7 @@ class _HomePageState extends State<HomePage> {
         refreshData();
       },
       child: SingleChildScrollView(
-        physics: AlwaysScrollableScrollPhysics(),
+        physics: const AlwaysScrollableScrollPhysics(),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -530,12 +778,12 @@ class _HomePageState extends State<HomePage> {
                 ),
               ),
             ),
-            buildSummaryCards(colorScheme),
+            buildExpandableSummaryCards(colorScheme),
             StreamBuilder<List<TransactionWithCategory>>(
               stream: _transactionStream,
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
-                  return Center(
+                  return const Center(
                     child: Padding(
                       padding: EdgeInsets.all(32),
                       child: CircularProgressIndicator(),
@@ -582,11 +830,11 @@ class _HomePageState extends State<HomePage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     buildChart(colorScheme),
-                    SizedBox(height: 16),
+                    const SizedBox(height: 16),
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                       child: Text(
-                        "Transactions",
+                        "Transaksi",
                         style: GoogleFonts.poppins(
                           fontSize: 16,
                           fontWeight: FontWeight.w600,
@@ -595,37 +843,32 @@ class _HomePageState extends State<HomePage> {
                       ),
                     ),
                     if (data != null && data.isNotEmpty)
-                      ListView.builder(
-                        shrinkWrap: true,
-                        physics: NeverScrollableScrollPhysics(),
-                        itemCount: data.length,
-                        itemBuilder: (context, index) {
-                          return buildTransactionCard(data[index], colorScheme);
-                        },
-                      )
+                      ...data.asMap().entries.map((entry) => buildTransactionCard(entry.value, entry.key, colorScheme))
                     else
                       Center(
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 30),
-                          child: Column(
-                            children: [
-                              Icon(
-                                Icons.receipt_long_outlined,
-                                size: 48,
-                                color: colorScheme.onSurfaceVariant.withOpacity(0.5),
-                              ),
-                              SizedBox(height: 12),
-                              Text(
-                                "No transactions yet",
-                                style: GoogleFonts.poppins(
-                                  color: colorScheme.onSurfaceVariant,
+                        child: AnimatedAppearance(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 30),
+                            child: Column(
+                              children: [
+                                Icon(
+                                  Icons.receipt_long_outlined,
+                                  size: 48,
+                                  color: colorScheme.onSurfaceVariant.withOpacity(0.5),
                                 ),
-                              ),
-                            ],
+                                const SizedBox(height: 12),
+                                Text(
+                                  "Belum ada transaksi",
+                                  style: GoogleFonts.poppins(
+                                    color: colorScheme.onSurfaceVariant,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       ),
-                    SizedBox(height: 80),
+                    const SizedBox(height: 80),
                   ],
                 );
               },

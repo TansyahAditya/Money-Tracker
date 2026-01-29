@@ -7,17 +7,35 @@ import 'package:path/path.dart' as p;
 import 'package:money_tracker/models/category.dart';
 import 'package:money_tracker/models/transaction.dart';
 import 'package:money_tracker/models/transaction_with_category.dart';
+import 'package:money_tracker/models/savings.dart';
+import 'package:money_tracker/models/cash_balance.dart';
 
 part 'database.g.dart';
 
 @DriftDatabase(
-  tables: [Categories, Transactions],
+  tables: [Categories, Transactions, Savings, CashBalances],
 )
 class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
 
   @override
-  int get schemaVersion => 6;
+  int get schemaVersion => 7;
+
+  @override
+  MigrationStrategy get migration {
+    return MigrationStrategy(
+      onCreate: (Migrator m) async {
+        await m.createAll();
+      },
+      onUpgrade: (Migrator m, int from, int to) async {
+        if (from < 7) {
+          // Create new tables for version 7
+          await m.createTable(savings);
+          await m.createTable(cashBalances);
+        }
+      },
+    );
+  }
 
   // --------------------------
   // CATEGORY CRUD FUNCTIONS
@@ -209,6 +227,166 @@ class AppDatabase extends _$AppDatabase {
   // Method to insert new category
   Future<int> insertCategoryRepo(CategoriesCompanion category) async {
     return await into(categories).insert(category);
+  }
+
+  // --------------------------
+  // SAVINGS CRUD FUNCTIONS
+  // --------------------------
+
+  Future<List<Saving>> getAllSavingsRepo() async {
+    return await (select(savings)
+      ..where((tbl) => tbl.deletedAt.isNull())
+      ..orderBy([(t) => OrderingTerm.desc(t.createdAt)])).get();
+  }
+
+  Stream<List<Saving>> watchAllSavingsRepo() {
+    return (select(savings)
+      ..where((tbl) => tbl.deletedAt.isNull())
+      ..orderBy([(t) => OrderingTerm.desc(t.createdAt)])).watch();
+  }
+
+  Future<Saving?> getSavingByIdRepo(int id) async {
+    return await (select(savings)..where((t) => t.id.equals(id))).getSingleOrNull();
+  }
+
+  Future<int> insertSavingRepo(SavingsCompanion saving) async {
+    return await into(savings).insert(saving);
+  }
+
+  Future updateSavingRepo(int id, {
+    String? name,
+    int? targetAmount,
+    int? currentAmount,
+    DateTime? targetDate,
+    String? icon,
+    int? color,
+  }) async {
+    return await (update(savings)..where((t) => t.id.equals(id))).write(
+      SavingsCompanion(
+        name: name != null ? Value(name) : const Value.absent(),
+        targetAmount: targetAmount != null ? Value(targetAmount) : const Value.absent(),
+        currentAmount: currentAmount != null ? Value(currentAmount) : const Value.absent(),
+        targetDate: targetDate != null ? Value(targetDate) : const Value.absent(),
+        icon: icon != null ? Value(icon) : const Value.absent(),
+        color: color != null ? Value(color) : const Value.absent(),
+        updatedAt: Value(DateTime.now()),
+      ),
+    );
+  }
+
+  Future addToSavingRepo(int id, int amount) async {
+    final saving = await getSavingByIdRepo(id);
+    if (saving != null) {
+      final newAmount = saving.currentAmount + amount;
+      return await updateSavingRepo(id, currentAmount: newAmount);
+    }
+  }
+
+  Future deleteSavingRepo(int id) async {
+    return await (update(savings)..where((t) => t.id.equals(id))).write(
+      SavingsCompanion(deletedAt: Value(DateTime.now())),
+    );
+  }
+
+  Future hardDeleteSavingRepo(int id) async {
+    return (delete(savings)..where((t) => t.id.equals(id))).go();
+  }
+
+  // --------------------------
+  // CASH BALANCE CRUD FUNCTIONS
+  // --------------------------
+
+  Future<List<CashBalanceEntry>> getAllCashBalanceRepo() async {
+    return await (select(cashBalances)
+      ..where((tbl) => tbl.deletedAt.isNull())
+      ..orderBy([(t) => OrderingTerm.desc(t.transactionDate)])).get();
+  }
+
+  Stream<List<CashBalanceEntry>> watchAllCashBalanceRepo() {
+    return (select(cashBalances)
+      ..where((tbl) => tbl.deletedAt.isNull())
+      ..orderBy([(t) => OrderingTerm.desc(t.transactionDate)])).watch();
+  }
+
+  Future<int> getCurrentCashBalanceRepo() async {
+    final entries = await (select(cashBalances)
+      ..where((tbl) => tbl.deletedAt.isNull())
+      ..orderBy([(t) => OrderingTerm.desc(t.transactionDate)])
+      ..limit(1)).get();
+    
+    if (entries.isEmpty) return 0;
+    return entries.first.balanceAfter;
+  }
+
+  Stream<int> watchCurrentCashBalanceRepo() {
+    return (select(cashBalances)
+      ..where((tbl) => tbl.deletedAt.isNull())
+      ..orderBy([(t) => OrderingTerm.desc(t.transactionDate)])
+      ..limit(1)).watch().map((entries) {
+        if (entries.isEmpty) return 0;
+        return entries.first.balanceAfter;
+      });
+  }
+
+  Future<int> insertCashBalanceRepo(CashBalancesCompanion entry) async {
+    return await into(cashBalances).insert(entry);
+  }
+
+  Future<int> addCashInRepo(String description, int amount) async {
+    final currentBalance = await getCurrentCashBalanceRepo();
+    final newBalance = currentBalance + amount;
+    final now = DateTime.now();
+    
+    return await insertCashBalanceRepo(CashBalancesCompanion.insert(
+      description: description,
+      amount: amount,
+      type: 1, // Cash In
+      balanceAfter: newBalance,
+      transactionDate: now,
+      createdAt: now,
+      updatedAt: now,
+    ));
+  }
+
+  Future<int> addCashOutRepo(String description, int amount) async {
+    final currentBalance = await getCurrentCashBalanceRepo();
+    final newBalance = currentBalance - amount;
+    final now = DateTime.now();
+    
+    return await insertCashBalanceRepo(CashBalancesCompanion.insert(
+      description: description,
+      amount: amount,
+      type: 2, // Cash Out
+      balanceAfter: newBalance,
+      transactionDate: now,
+      createdAt: now,
+      updatedAt: now,
+    ));
+  }
+
+  Future deleteCashBalanceRepo(int id) async {
+    return await (update(cashBalances)..where((t) => t.id.equals(id))).write(
+      CashBalancesCompanion(deletedAt: Value(DateTime.now())),
+    );
+  }
+
+  Future recalculateCashBalancesRepo() async {
+    final entries = await (select(cashBalances)
+      ..where((tbl) => tbl.deletedAt.isNull())
+      ..orderBy([(t) => OrderingTerm.asc(t.transactionDate)])).get();
+    
+    int runningBalance = 0;
+    for (var entry in entries) {
+      if (entry.type == 1) {
+        runningBalance += entry.amount;
+      } else {
+        runningBalance -= entry.amount;
+      }
+      
+      await (update(cashBalances)..where((t) => t.id.equals(entry.id))).write(
+        CashBalancesCompanion(balanceAfter: Value(runningBalance)),
+      );
+    }
   }
 }
 
